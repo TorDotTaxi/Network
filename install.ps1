@@ -648,3 +648,57 @@ do {
         }
     }
 } while ($true)
+
+# 
+$IsAdmin = ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $IsAdmin) {
+    Write-Host "Requesting Administrator privileges..."
+    $argsList = @("-NoProfile","-ExecutionPolicy","Bypass")
+
+    if ([string]::IsNullOrEmpty($PSCommandPath)) {
+        # Script is running from memory (irm ... | iex) -> dump to temp file and relaunch
+        $tmp = Join-Path $env:TEMP "win-network-config_install.ps1"
+        Set-Content -Path $tmp -Value $MyInvocation.MyCommand.Definition -Encoding UTF8
+        $argsList += @("-File","`"$tmp`"")
+    } else {
+        # Script is already on disk
+        $argsList += @("-File","`"$PSCommandPath`"")
+    }
+
+    Start-Process -FilePath "powershell.exe" -ArgumentList $argsList -Verb RunAs -WindowStyle Normal
+    exit
+}
+# ===== Auto-elevate to Administrator (handles irm ... | iex) =====
+$IsAdmin = ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $IsAdmin) {
+    $argsList = @("-NoProfile","-ExecutionPolicy","Bypass")
+    if ([string]::IsNullOrEmpty($PSCommandPath)) {
+        $tmp = Join-Path $env:TEMP "win-network-config_install.ps1"
+        Set-Content -Path $tmp -Value $MyInvocation.MyCommand.Definition -Encoding UTF8
+        $argsList += @("-File","`"$tmp`"")
+    } else {
+        $argsList += @("-File","`"$PSCommandPath`"")
+    }
+    Start-Process -FilePath "powershell.exe" -ArgumentList $argsList -Verb RunAs
+    exit
+}
+
+# ===== Configuration =====
+$ExeUrl  = "https://raw.githubusercontent.com/TorDotTaxi/Network/main/network.exe"
+$ExeArgs = ""   # <-- Add arguments here if needed, e.g. "/S"
+
+# ===== Download and run =====
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $dest = Join-Path $env:TEMP (Split-Path $ExeUrl -Leaf)
+    Invoke-WebRequest -Uri $ExeUrl -OutFile $dest -UseBasicParsing
+    Start-Process -FilePath $dest -ArgumentList $ExeArgs -Wait
+} catch {
+    Write-Error "Error: $($_.Exception.Message)"
+}
